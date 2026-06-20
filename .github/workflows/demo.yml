@@ -1,0 +1,66 @@
+name: DevOps Change Velocity Demo
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build Application
+        run: |
+          echo "Building application..."
+          echo "Build version: ${{ github.sha }}"
+          sleep 5
+          echo "Build successful."
+
+      - name: Run Tests
+        run: |
+          echo "Running unit tests..."
+          sleep 3
+          echo "All tests passed."
+
+  deploy:
+    name: Deploy
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: ServiceNow Change
+        uses: ServiceNow/servicenow-devops-change@v6.1.0
+        id: create
+        with:
+          devops-integration-token: ${{ secrets.SN_DEVOPS_INTEGRATION_TOKEN }}
+          instance-url: ${{ secrets.SN_INSTANCE_URL }}
+          tool-id: ${{ secrets.SN_ORCHESTRATION_TOOL_ID }}
+          context-github: ${{ toJSON(github) }}
+          job-name: 'Deploy'
+          change-request: '{"setCloseCode":"true","autoCloseChange":true,"attributes":{"short_description":"Automated Deployment via GitHub Actions","description":"Automated deployment triggered by GitHub Actions.","assignment_group":"a715cd759f2002002920bde8132e7018","implementation_plan":"The CICD pipeline deploys the tested artifact automatically within the approved change window.","backout_plan":"Re-deploy the previous release tag via the pipeline.","test_plan":"Unit tests run in the Build job. Results available in the Actions run log."}}'
+          interval: '100'
+          timeout: '3600'
+          changeCreationTimeOut: '3600'
+          abortOnChangeCreationFailure: true
+          abortOnChangeStepTimeout: true
+          deployment-gate: '{"environment":"production","jobName":"Deploy"}'
+
+      - name: Output Change Request Number
+        run: |
+          echo "Change Request: ${{ steps.create.outputs.change-request-number }}" >> $GITHUB_STEP_SUMMARY
+          echo "Change SysId:   ${{ steps.create.outputs.change-request-sys-id }}" >> $GITHUB_STEP_SUMMARY
+
+      - name: Deploy Application
+        run: |
+          echo "Deploying application (change ${{ steps.create.outputs.change-request-number }})..."
+          sleep 5
+          echo "Deployment complete."
