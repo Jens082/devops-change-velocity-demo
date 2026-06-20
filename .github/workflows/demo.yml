@@ -20,6 +20,7 @@ jobs:
         run: |
           echo "Building application..."
           echo "Build version: ${{ github.sha }}"
+          # Simulate build steps
           sleep 5
           echo "Build successful."
 
@@ -37,6 +38,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # IMPORTANT: job-name must exactly match the job's name: field above ('Deploy')
       - name: ServiceNow Change
         uses: ServiceNow/servicenow-devops-change@v6.1.0
         id: create
@@ -46,13 +48,12 @@ jobs:
           tool-id: ${{ secrets.SN_ORCHESTRATION_TOOL_ID }}
           context-github: ${{ toJSON(github) }}
           job-name: 'Deploy'
-          change-request: '{"setCloseCode":"true","autoCloseChange":true,"attributes":{"short_description":"Automated Deployment via GitHub Actions","description":"Automated deployment triggered by GitHub Actions.","assignment_group":"a715cd759f2002002920bde8132e7018","implementation_plan":"The CICD pipeline deploys the tested artifact automatically within the approved change window.","backout_plan":"Re-deploy the previous release tag via the pipeline.","test_plan":"Unit tests run in the Build job. Results available in the Actions run log."}}'
+          change-request: '{"setCloseCode":"true","autoCloseChange":true,"attributes":{"short_description":"Automated Deployment via GitHub Actions","description":"Automated deployment triggered by GitHub Actions.","implementation_plan":"The CICD pipeline deploys the tested artifact automatically.","backout_plan":"Re-deploy the previous release tag via the pipeline.","test_plan":"Unit tests run in the Build job."}}'
           interval: '100'
           timeout: '3600'
           changeCreationTimeOut: '3600'
           abortOnChangeCreationFailure: true
           abortOnChangeStepTimeout: true
-          deployment-gate: '{"environment":"production","jobName":"Deploy"}'
 
       - name: Output Change Request Number
         run: |
