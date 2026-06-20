@@ -48,7 +48,7 @@ jobs:
           tool-id: ${{ secrets.SN_ORCHESTRATION_TOOL_ID }}
           context-github: ${{ toJSON(github) }}
           job-name: 'Deploy'
-          change-request: '{"setCloseCode":"true","autoCloseChange":true,"change_model":"adffaa9e4370211072b7f6be5bb8f2ed","attributes":{"short_description":"Automated Deployment via GitHub Actions","description":"Automated deployment triggered by GitHub Actions.","implementation_plan":"The CICD pipeline deploys the tested artifact automatically.","backout_plan":"Re-deploy the previous release tag via the pipeline.","test_plan":"Unit tests run in the Build job."}}'
+          change-request: '{"setCloseCode":"true","autoCloseChange":true,"chg_model":"adffaa9e4370211072b7f6be5bb8f2ed","attributes":{"short_description":"Automated Deployment via GitHub Actions","description":"Automated deployment triggered by GitHub Actions.","implementation_plan":"The CICD pipeline deploys the tested artifact automatically.","backout_plan":"Re-deploy the previous release tag via the pipeline.","test_plan":"Unit tests run in the Build job."}}'
           interval: '100'
           timeout: '3600'
           changeCreationTimeOut: '3600'
