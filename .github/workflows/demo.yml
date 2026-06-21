@@ -55,12 +55,68 @@ jobs:
           path: _site
 
   # ----------------------------------------------------------
-  # 2) SERVICENOW CHANGE: Change Request erzeugen & auf
-  #    Genehmigung warten. Laeuft erst nach erfolgreichem Build.
+  # 2) TEST: Automatisierte Pruefungen der Seite.
+  #    Schlaegt EIN Test fehl, stoppt die Pipeline -> kein Change,
+  #    kein Deploy. Genau das ist der Showcase-Effekt:
+  #    "nur getesteter Code wird zum Change".
+  # ----------------------------------------------------------
+  test:
+    name: Test
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: HTML-Smoke-Tests
+        run: |
+          echo "Starte automatisierte Tests der index.html..."
+          fail=0
+
+          # Test 1: Datei existiert
+          if [ ! -f index.html ]; then
+            echo "FAIL: index.html nicht gefunden"; fail=1
+          else
+            echo "OK: index.html vorhanden"
+          fi
+
+          # Test 2: Grundlegende HTML-Struktur vorhanden
+          grep -q "<!DOCTYPE html>" index.html \
+            && echo "OK: DOCTYPE vorhanden" \
+            || { echo "FAIL: DOCTYPE fehlt"; fail=1; }
+
+          # Test 3: Titel-Tag vorhanden
+          grep -q "<title>" index.html \
+            && echo "OK: title-Tag vorhanden" \
+            || { echo "FAIL: title-Tag fehlt"; fail=1; }
+
+          # Test 4: oeffnende = schliessende <section>-Tags
+          open=$(grep -o "<section" index.html | wc -l)
+          close=$(grep -o "</section>" index.html | wc -l)
+          if [ "$open" -eq "$close" ]; then
+            echo "OK: section-Tags ausgeglichen ($open)"
+          else
+            echo "FAIL: section-Tags unausgeglichen (auf:$open zu:$close)"; fail=1
+          fi
+
+          # Test 5: Versions-Variable vorhanden
+          grep -q -- "--version:" index.html \
+            && echo "OK: Versions-Variable vorhanden" \
+            || { echo "FAIL: --version fehlt"; fail=1; }
+
+          if [ "$fail" -ne 0 ]; then
+            echo "::error::Tests fehlgeschlagen - Pipeline wird gestoppt."
+            exit 1
+          fi
+          echo "Alle Tests bestanden."
+
+  # ----------------------------------------------------------
+  # 3) SERVICENOW CHANGE: Change Request erzeugen & auf
+  #    Genehmigung warten. Laeuft erst nach bestandenem Test.
   # ----------------------------------------------------------
   change:
     name: Change
-    needs: build
+    needs: test
     runs-on: ubuntu-latest
     steps:
       - name: ServiceNow Change
@@ -72,7 +128,7 @@ jobs:
           tool-id: ${{ secrets.SN_ORCHESTRATION_TOOL_ID }}
           context-github: ${{ toJSON(github) }}
           job-name: 'Change'        # MUSS dem 'name:' dieses Jobs entsprechen
-          change-request: '{"setCloseCode":"true","autoCloseChange":true,"attributes":{"short_description":"Automated Deployment via GitHub Actions","description":"Automated deployment triggered by GitHub Actions.","assignment_group":"a715cd759f2002002920bde8132e7018","implementation_plan":"The CICD pipeline deploys the tested artifact automatically.","backout_plan":"Re-deploy the previous release tag via the pipeline.","test_plan":"Unit tests run in the Build job."}}'
+          change-request: '{"setCloseCode":"true","autoCloseChange":true,"attributes":{"short_description":"Showcase Deployment der Demo-Webseite","description":"Automatischer Change aus der GitHub-Actions-Pipeline. Deployment der statischen Showcase-Seite auf GitHub Pages.","implementation_plan":"Die genehmigte Aenderung wird automatisch durch die CI/CD-Pipeline innerhalb des geplanten Zeitfensters auf GitHub Pages deployed.","backout_plan":"Bei Fehlern wird der vorherige Stand der Seite per Revert/Redeploy wiederhergestellt.","test_plan":"Pruefung, ob die Seite nach dem Deploy korrekt erreichbar ist und die Aenderung sichtbar ist."}}'
           interval: '60'                       # alle 60s den Change-Status abfragen
           timeout: '3600'                      # max. 1h auf Abschluss warten
           changeCreationTimeOut: '3600'
@@ -83,7 +139,7 @@ jobs:
         run: echo "Erstellter Change ${{ steps.create.outputs.change-request-number }}"
 
   # ----------------------------------------------------------
-  # 3) DEPLOY: Seite auf GitHub Pages veroeffentlichen.
+  # 4) DEPLOY: Seite auf GitHub Pages veroeffentlichen.
   #    Laeuft erst nach genehmigtem Change.
   # ----------------------------------------------------------
   deploy:
