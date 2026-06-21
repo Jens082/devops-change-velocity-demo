@@ -1,14 +1,37 @@
-name: DevOps Change Velocity Demo
+# ============================================================
+#  DevOps Change Velocity – Showcase Pipeline
+#  Ablauf:  build  ->  servicenow-change  ->  deploy (Pages)
+#
+#  Voraussetzungen:
+#   - Repo ist public, GitHub Pages Source = "GitHub Actions"
+#   - Secrets gesetzt: SN_INSTANCE_URL, SN_ORCHESTRATION_TOOL_ID,
+#     SN_DEVOPS_INTEGRATION_TOKEN
+#   - index.html liegt im Repo-Wurzelverzeichnis
+# ============================================================
+
+name: Showcase Pipeline
 
 on:
   push:
-    branches:
-      - main
-  pull_request:
-    branches:
-      - main
+    branches: [ main ]
+  workflow_dispatch:        # erlaubt manuelles Starten per Knopf im Actions-Tab
+
+# Berechtigungen, die der Pages-Deploy braucht
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Verhindert parallele Deploys, falls schnell hintereinander gepusht wird
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
 
 jobs:
+
+  # ----------------------------------------------------------
+  # 1) BUILD: Seite "bauen" und als Pages-Artefakt verpacken
+  # ----------------------------------------------------------
   build:
     name: Build
     runs-on: ubuntu-latest
@@ -16,52 +39,61 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Build Application
+      - name: Seite vorbereiten
         run: |
-          echo "Building application..."
-          echo "Build version: ${{ github.sha }}"
-          # Simulate build steps
-          sleep 5
-          echo "Build successful."
+          echo "Build der statischen Seite..."
+          mkdir -p _site
+          cp index.html _site/index.html
+          echo "Build abgeschlossen."
 
-      - name: Run Tests
-        run: |
-          echo "Running unit tests..."
-          sleep 3
-          echo "All tests passed."
+      - name: Pages-Konfiguration
+        uses: actions/configure-pages@v5
 
-  deploy:
-    name: Deploy
+      - name: Artefakt hochladen
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+  # ----------------------------------------------------------
+  # 2) SERVICENOW CHANGE: Change Request erzeugen & auf
+  #    Genehmigung warten. Laeuft erst nach erfolgreichem Build.
+  # ----------------------------------------------------------
+  change:
+    name: Change
     needs: build
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      # IMPORTANT: job-name must exactly match the job's name: field above ('Deploy')
       - name: ServiceNow Change
-        uses: ServiceNow/servicenow-devops-change@v6.1.0
         id: create
+        uses: ServiceNow/servicenow-devops-change@v6.3.0
         with:
           devops-integration-token: ${{ secrets.SN_DEVOPS_INTEGRATION_TOKEN }}
           instance-url: ${{ secrets.SN_INSTANCE_URL }}
           tool-id: ${{ secrets.SN_ORCHESTRATION_TOOL_ID }}
           context-github: ${{ toJSON(github) }}
-          job-name: 'Deploy'
-          change-request: '{"setCloseCode":"true","autoCloseChange":true,"attributes":{"short_description":"Automated Deployment via GitHub Actions","description":"Automated deployment triggered by GitHub Actions.","assignment_group":"a715cd759f2002002920bde8132e7018","implementation_plan":"The CICD pipeline deploys the tested artifact automatically.","backout_plan":"Re-deploy the previous release tag via the pipeline.","test_plan":"Unit tests run in the Build job."}}'
-          interval: '100'
-          timeout: '3600'
+          job-name: 'Change'        # MUSS dem 'name:' dieses Jobs entsprechen
+          change-request: '{"setCloseCode":"true","autoCloseChange":true,"attributes":{"short_description":"Showcase Deployment der Demo-Webseite","description":"Automatischer Change aus der GitHub-Actions-Pipeline. Deployment der statischen Showcase-Seite auf GitHub Pages.","implementation_plan":"Die genehmigte Aenderung wird automatisch durch die CI/CD-Pipeline innerhalb des geplanten Zeitfensters auf GitHub Pages deployed.","backout_plan":"Bei Fehlern wird der vorherige Stand der Seite per Revert/Redeploy wiederhergestellt.","test_plan":"Pruefung, ob die Seite nach dem Deploy korrekt erreichbar ist und die Aenderung sichtbar ist."}}'
+          interval: '60'                       # alle 60s den Change-Status abfragen
+          timeout: '3600'                      # max. 1h auf Abschluss warten
           changeCreationTimeOut: '3600'
-          abortOnChangeCreationFailure: true
-          abortOnChangeStepTimeout: true
+          abortOnChangeCreationFailure: true   # Pipeline stoppt, wenn kein Change entsteht
+          abortOnChangeStepTimeout: true       # Pipeline stoppt bei Timeout der Genehmigung
 
-      - name: Output Change Request Number
-        run: |
-          echo "Change Request: ${{ steps.create.outputs.change-request-number }}" >> $GITHUB_STEP_SUMMARY
-          echo "Change SysId:   ${{ steps.create.outputs.change-request-sys-id }}" >> $GITHUB_STEP_SUMMARY
+      - name: Change-Nummer ausgeben
+        run: echo "Erstellter Change ${{ steps.create.outputs.change-request-number }}"
 
-      - name: Deploy Application
-        run: |
-          echo "Deploying application (change ${{ steps.create.outputs.change-request-number }})..."
-          sleep 5
-          echo "Deployment complete."
+  # ----------------------------------------------------------
+  # 3) DEPLOY: Seite auf GitHub Pages veroeffentlichen.
+  #    Laeuft erst nach genehmigtem Change.
+  # ----------------------------------------------------------
+  deploy:
+    name: Deploy
+    needs: change
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Auf GitHub Pages deployen
+        id: deployment
+        uses: actions/deploy-pages@v4
