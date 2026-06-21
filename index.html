@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>IT.Niedersachsen — DevOps Change Velocity Showcase</title>
+<style>
+  /* ============================================================
+     ZENTRALE EINSTELLUNGEN ZUM LIVE-ÄNDERN IM WORKSHOP
+     Diese Werte sind die "Stellschrauben" fuer die Demo.
+     Aendere sie per Commit/PR und beobachte die Pipeline +
+     die Aenderung auf der Live-Seite (GitHub Pages).
+     ============================================================ */
+  :root {
+    --version: "1.0.0";        /* << Release-Nummer: bei jedem "Deploy" hochzaehlen */
+    --accent: #2563eb;         /* << Akzentfarbe: z.B. auf #e11d48 oder #059669 aendern */
+    --status-color: #059669;   /* Farbe des Status-Indikators */
+  }
+
+  @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;500&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Space Grotesk', system-ui, sans-serif;
+    background: #0a0e1a;
+    color: #e2e8f0;
+    line-height: 1.6;
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  .mono { font-family: 'IBM Plex Mono', monospace; }
+
+  /* ---- Hintergrund: dezentes Pipeline-Raster ---- */
+  .grid-bg {
+    position: fixed; inset: 0; z-index: 0;
+    background-image:
+      linear-gradient(rgba(37,99,235,0.04) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(37,99,235,0.04) 1px, transparent 1px);
+    background-size: 48px 48px;
+    pointer-events: none;
+  }
+
+  .wrap { position: relative; z-index: 1; max-width: 920px; margin: 0 auto; padding: 0 24px; }
+
+  /* ---- Kopfbereich ---- */
+  header { padding: 64px 0 40px; border-bottom: 1px solid rgba(148,163,184,0.15); }
+
+  .eyebrow {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px; letter-spacing: 0.18em; text-transform: uppercase;
+    color: var(--accent); margin-bottom: 16px;
+  }
+
+  h1 { font-size: clamp(32px, 6vw, 56px); font-weight: 700; line-height: 1.05; letter-spacing: -0.02em; }
+  h1 .light { color: #64748b; font-weight: 400; }
+
+  .lead { margin-top: 20px; font-size: 18px; color: #94a3b8; max-width: 620px; }
+
+  /* ---- Status-Karte (zeigt Version + Build) ---- */
+  .status {
+    margin-top: 36px; display: flex; flex-wrap: wrap; gap: 16px; align-items: center;
+    padding: 20px 24px; background: rgba(15,23,42,0.7);
+    border: 1px solid rgba(148,163,184,0.18); border-radius: 14px;
+  }
+  .dot {
+    width: 10px; height: 10px; border-radius: 50%;
+    background: var(--status-color);
+    box-shadow: 0 0 0 0 var(--status-color);
+    animation: pulse 2.2s infinite;
+  }
+  @keyframes pulse {
+    0% { box-shadow: 0 0 0 0 rgba(5,150,105,0.5); }
+    70% { box-shadow: 0 0 0 10px rgba(5,150,105,0); }
+    100% { box-shadow: 0 0 0 0 rgba(5,150,105,0); }
+  }
+  .status .label { font-family:'IBM Plex Mono',monospace; font-size: 13px; color:#94a3b8; }
+  .status .value { font-family:'IBM Plex Mono',monospace; font-size: 13px; color:#e2e8f0; font-weight: 500; }
+  .status .sep { width:1px; height: 20px; background: rgba(148,163,184,0.25); }
+
+  /* ---- Inhaltsabschnitte ---- */
+  section { padding: 48px 0; border-bottom: 1px solid rgba(148,163,184,0.1); }
+  h2 { font-size: 22px; font-weight: 600; margin-bottom: 8px; }
+  h2 .num { font-family:'IBM Plex Mono',monospace; font-size: 14px; color: var(--accent); margin-right: 10px; }
+  section p { color:#94a3b8; max-width: 640px; }
+
+  /* ---- Feature-Liste (editierbare Demo-Inhalte) ---- */
+  .features { margin-top: 24px; display: grid; gap: 12px; }
+  .feature {
+    padding: 18px 20px; background: rgba(15,23,42,0.5);
+    border: 1px solid rgba(148,163,184,0.14); border-radius: 12px;
+    border-left: 3px solid var(--accent);
+  }
+  .feature h3 { font-size: 16px; font-weight: 600; color:#e2e8f0; margin-bottom: 4px; }
+  .feature p { font-size: 14px; }
+
+  /* ---- "Wie das funktioniert" Pipeline-Visual ---- */
+  .pipeline { margin-top: 24px; display: flex; flex-wrap: wrap; gap: 0; align-items: stretch; }
+  .stage {
+    flex: 1; min-width: 130px; padding: 18px 16px; text-align: center;
+    background: rgba(15,23,42,0.5); border: 1px solid rgba(148,163,184,0.14);
+  }
+  .stage:first-child { border-radius: 12px 0 0 12px; }
+  .stage:last-child { border-radius: 0 12px 12px 0; }
+  .stage .ico { font-family:'IBM Plex Mono',monospace; font-size: 11px; color: var(--accent); letter-spacing:0.1em; }
+  .stage .name { font-size: 15px; font-weight: 600; margin-top: 6px; }
+  .stage .desc { font-size: 12px; color:#64748b; margin-top: 4px; }
+
+  footer { padding: 40px 0 64px; color:#475569; font-size: 13px; }
+  footer .mono { color:#64748b; }
+
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .dot { animation: none; }
+  }
+</style>
+</head>
+<body>
+<div class="grid-bg"></div>
+<div class="wrap">
+
+  <header>
+    <div class="eyebrow">DevOps Change Velocity · Live-Demo</div>
+    <!-- EDITIERBAR: Ueberschrift -->
+    <h1>Jeder Commit<br><span class="light">wird zum nachvollziehbaren Change.</span></h1>
+    <!-- EDITIERBAR: Einleitungstext -->
+    <p class="lead">Diese Seite ist der sichtbare Endpunkt einer CI/CD-Pipeline.
+       Eine Code-Aenderung erzeugt automatisch einen Change Request in ServiceNow,
+       durchlaeuft die Genehmigung und wird anschliessend hier veroeffentlicht.</p>
+
+    <div class="status">
+      <span class="dot"></span>
+      <span class="label">Status:</span>
+      <!-- EDITIERBAR: Status-Text -->
+      <span class="value" id="status-text">Live</span>
+      <span class="sep"></span>
+      <span class="label">Version:</span>
+      <span class="value" id="version"></span>
+      <span class="sep"></span>
+      <span class="label">Letztes Deploy:</span>
+      <!-- EDITIERBAR: Datum bei jedem Deploy aktualisieren -->
+      <span class="value">24.06.2026</span>
+    </div>
+  </header>
+
+  <section>
+    <h2><span class="num">01</span>Was hier demonstriert wird</h2>
+    <p>Der Workshop-Showcase zeigt den durchgaengigen Weg von der Entwicklung bis zum
+       genehmigten Betrieb — ohne manuelles Anlegen von Changes. Die folgenden Punkte
+       sind die Demo-Inhalte, die wir live per Commit veraendern.</p>
+
+    <div class="features">
+      <!-- EDITIERBAR: Diese Karten im Workshop aendern/ergaenzen -->
+      <div class="feature">
+        <h3>Automatische Change-Erstellung</h3>
+        <p>Die Pipeline legt bei jedem Deploy einen Change Request in ServiceNow an.</p>
+      </div>
+      <div class="feature">
+        <h3>Nachvollziehbare Verknuepfung</h3>
+        <p>Commits, Pull Requests und Pipeline-Laeufe haengen am Change Record.</p>
+      </div>
+      <div class="feature">
+        <h3>Genehmigung im Fluss</h3>
+        <p>Die Pipeline pausiert bis zur Freigabe und laeuft danach automatisch weiter.</p>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2><span class="num">02</span>Der Weg einer Aenderung</h2>
+    <p>Von der Code-Aenderung bis zur veroeffentlichten Seite — jede Station erzeugt
+       Daten, die DevOps Change Velocity einsammelt.</p>
+
+    <div class="pipeline">
+      <div class="stage"><div class="ico">01</div><div class="name">Commit</div><div class="desc">Code-Aenderung im Repo</div></div>
+      <div class="stage"><div class="ico">02</div><div class="name">Build</div><div class="desc">GitHub Actions baut</div></div>
+      <div class="stage"><div class="ico">03</div><div class="name">Change</div><div class="desc">CHG in ServiceNow</div></div>
+      <div class="stage"><div class="ico">04</div><div class="name">Approval</div><div class="desc">Freigabe</div></div>
+      <div class="stage"><div class="ico">05</div><div class="name">Deploy</div><div class="desc">Diese Seite</div></div>
+    </div>
+  </section>
+
+  <footer>
+    <p>IT.Niedersachsen · Standortbestimmung Workshop · Showcase DevOps Change Velocity</p>
+    <p class="mono" style="margin-top:6px;">Diese Seite wird automatisch via GitHub Actions deployed.</p>
+  </footer>
+
+</div>
+
+<script>
+  // Liest die Version aus der CSS-Variable und zeigt sie an.
+  // So muss die Versionsnummer nur an EINER Stelle (oben im :root) geaendert werden.
+  const v = getComputedStyle(document.documentElement)
+              .getPropertyValue('--version').trim().replace(/['"]/g,'');
+  document.getElementById('version').textContent = 'v' + v;
+</script>
+</body>
+</html>
