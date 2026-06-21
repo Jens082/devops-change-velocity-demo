@@ -1,6 +1,7 @@
 # ============================================================
 #  DevOps Change Velocity – Showcase Pipeline
-#  Ablauf:  build  ->  servicenow-change  ->  deploy (Pages)
+#  Ablauf:  build  ->  test (+JUnit-Report an ServiceNow)
+#           ->  change  ->  deploy (Pages)
 #
 #  Voraussetzungen:
 #   - Repo ist public, GitHub Pages Source = "GitHub Actions"
@@ -16,13 +17,11 @@ on:
     branches: [ main ]
   workflow_dispatch:        # erlaubt manuelles Starten per Knopf im Actions-Tab
 
-# Berechtigungen, die der Pages-Deploy braucht
 permissions:
   contents: read
   pages: write
   id-token: write
 
-# Verhindert parallele Deploys, falls schnell hintereinander gepusht wird
 concurrency:
   group: "pages"
   cancel-in-progress: false
@@ -56,9 +55,9 @@ jobs:
 
   # ----------------------------------------------------------
   # 2) TEST: Automatisierte Pruefungen der Seite.
-  #    Schlaegt EIN Test fehl, stoppt die Pipeline -> kein Change,
-  #    kein Deploy. Genau das ist der Showcase-Effekt:
-  #    "nur getesteter Code wird zum Change".
+  #    Erzeugt eine JUnit-XML-Datei und meldet sie an ServiceNow,
+  #    damit die Ergebnisse im DevOps-Dashboard erscheinen.
+  #    Schlaegt ein Test fehl, stoppt die Pipeline -> kein Change.
   # ----------------------------------------------------------
   test:
     name: Test
@@ -68,47 +67,92 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: HTML-Smoke-Tests
+      - name: HTML-Smoke-Tests ausfuehren und JUnit-XML erzeugen
+        id: tests
         run: |
           echo "Starte automatisierte Tests der index.html..."
-          fail=0
+
+          # --- Tests definieren: Name | Bedingung (0 = bestanden) ---
+          declare -a names=()
+          declare -a results=()   # "pass" oder "fail"
+          declare -a messages=()
+
+          run_test () {
+            local name="$1"; local ok="$2"; local msg="$3"
+            names+=("$name")
+            if [ "$ok" -eq 0 ]; then
+              results+=("pass"); messages+=("")
+              echo "OK: $name"
+            else
+              results+=("fail"); messages+=("$msg")
+              echo "FAIL: $name - $msg"
+            fi
+          }
 
           # Test 1: Datei existiert
-          if [ ! -f index.html ]; then
-            echo "FAIL: index.html nicht gefunden"; fail=1
-          else
-            echo "OK: index.html vorhanden"
-          fi
+          [ -f index.html ] && r=0 || r=1
+          run_test "index.html existiert" "$r" "Datei nicht gefunden"
 
-          # Test 2: Grundlegende HTML-Struktur vorhanden
-          grep -q "<!DOCTYPE html>" index.html \
-            && echo "OK: DOCTYPE vorhanden" \
-            || { echo "FAIL: DOCTYPE fehlt"; fail=1; }
+          # Test 2: DOCTYPE
+          grep -q "<!DOCTYPE html>" index.html && r=0 || r=1
+          run_test "DOCTYPE vorhanden" "$r" "DOCTYPE fehlt"
 
-          # Test 3: Titel-Tag vorhanden
-          grep -q "<title>" index.html \
-            && echo "OK: title-Tag vorhanden" \
-            || { echo "FAIL: title-Tag fehlt"; fail=1; }
+          # Test 3: title-Tag
+          grep -q "<title>" index.html && r=0 || r=1
+          run_test "title-Tag vorhanden" "$r" "title-Tag fehlt"
 
-          # Test 4: oeffnende = schliessende <section>-Tags
-          open=$(grep -o "<section" index.html | wc -l)
-          close=$(grep -o "</section>" index.html | wc -l)
-          if [ "$open" -eq "$close" ]; then
-            echo "OK: section-Tags ausgeglichen ($open)"
-          else
-            echo "FAIL: section-Tags unausgeglichen (auf:$open zu:$close)"; fail=1
-          fi
+          # Test 4: section-Tags ausgeglichen
+          o=$(grep -o "<section" index.html | wc -l)
+          c=$(grep -o "</section>" index.html | wc -l)
+          [ "$o" -eq "$c" ] && r=0 || r=1
+          run_test "section-Tags ausgeglichen" "$r" "auf:$o zu:$c"
 
-          # Test 5: Versions-Variable vorhanden
-          grep -q -- "--version:" index.html \
-            && echo "OK: Versions-Variable vorhanden" \
-            || { echo "FAIL: --version fehlt"; fail=1; }
+          # Test 5: Versions-Variable
+          grep -q -- "--version:" index.html && r=0 || r=1
+          run_test "Versions-Variable vorhanden" "$r" "--version fehlt"
 
-          if [ "$fail" -ne 0 ]; then
-            echo "::error::Tests fehlgeschlagen - Pipeline wird gestoppt."
+          # --- JUnit-XML erzeugen ---
+          total=${#names[@]}
+          failures=0
+          for r in "${results[@]}"; do [ "$r" = "fail" ] && failures=$((failures+1)); done
+
+          mkdir -p test-results
+          {
+            echo '<?xml version="1.0" encoding="UTF-8"?>'
+            echo "<testsuites>"
+            echo "  <testsuite name=\"HTML Smoke Tests\" tests=\"$total\" failures=\"$failures\" errors=\"0\" skipped=\"0\">"
+            for i in "${!names[@]}"; do
+              echo "    <testcase classname=\"index.html\" name=\"${names[$i]}\">"
+              if [ "${results[$i]}" = "fail" ]; then
+                echo "      <failure message=\"${messages[$i]}\">${messages[$i]}</failure>"
+              fi
+              echo "    </testcase>"
+            done
+            echo "  </testsuite>"
+            echo "</testsuites>"
+          } > test-results/junit.xml
+
+          echo "----- erzeugte JUnit-XML -----"
+          cat test-results/junit.xml
+
+          # Exit-Code: bei Fehlern faellt der Step (und damit die Pipeline)
+          if [ "$failures" -ne 0 ]; then
+            echo "::error::$failures Test(s) fehlgeschlagen."
             exit 1
           fi
-          echo "Alle Tests bestanden."
+          echo "Alle $total Tests bestanden."
+
+      - name: Testergebnisse an ServiceNow melden
+        if: success() || failure()   # auch bei fehlgeschlagenen Tests melden
+        uses: ServiceNow/servicenow-devops-test-report@v6.0.0
+        with:
+          devops-integration-token: ${{ secrets.SN_DEVOPS_INTEGRATION_TOKEN }}
+          instance-url: ${{ secrets.SN_INSTANCE_URL }}
+          tool-id: ${{ secrets.SN_ORCHESTRATION_TOOL_ID }}
+          context-github: ${{ toJSON(github) }}
+          job-name: 'Test'          # MUSS dem 'name:' dieses Jobs entsprechen
+          xml-report-filename: test-results
+          test-summary-name: 'HTML Smoke Tests'
 
   # ----------------------------------------------------------
   # 3) SERVICENOW CHANGE: Change Request erzeugen & auf
@@ -129,11 +173,11 @@ jobs:
           context-github: ${{ toJSON(github) }}
           job-name: 'Change'        # MUSS dem 'name:' dieses Jobs entsprechen
           change-request: '{"setCloseCode":"true","autoCloseChange":true,"attributes":{"short_description":"Showcase Deployment der Demo-Webseite","description":"Automatischer Change aus der GitHub-Actions-Pipeline. Deployment der statischen Showcase-Seite auf GitHub Pages.","assignment_group":"a715cd759f2002002920bde8132e7018","implementation_plan":"Die genehmigte Aenderung wird automatisch durch die CI/CD-Pipeline innerhalb des geplanten Zeitfensters auf GitHub Pages deployed.","backout_plan":"Bei Fehlern wird der vorherige Stand der Seite per Revert/Redeploy wiederhergestellt.","test_plan":"Pruefung, ob die Seite nach dem Deploy korrekt erreichbar ist und die Aenderung sichtbar ist."}}'
-          interval: '60'                       # alle 60s den Change-Status abfragen
-          timeout: '3600'                      # max. 1h auf Abschluss warten
+          interval: '60'
+          timeout: '3600'
           changeCreationTimeOut: '3600'
-          abortOnChangeCreationFailure: true   # Pipeline stoppt, wenn kein Change entsteht
-          abortOnChangeStepTimeout: true       # Pipeline stoppt bei Timeout der Genehmigung
+          abortOnChangeCreationFailure: true
+          abortOnChangeStepTimeout: true
 
       - name: Change-Nummer ausgeben
         run: echo "Erstellter Change ${{ steps.create.outputs.change-request-number }}"
