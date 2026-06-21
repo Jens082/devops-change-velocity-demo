@@ -128,7 +128,8 @@ jobs:
           tool-id: ${{ secrets.SN_ORCHESTRATION_TOOL_ID }}
           context-github: ${{ toJSON(github) }}
           job-name: 'Change'        # MUSS dem 'name:' dieses Jobs entsprechen
-change-request: '{"setCloseCode":"true","autoCloseChange":true,"attributes":{"short_description":"Showcase Deployment der Demo-Webseite","description":"Automatischer Change aus der GitHub-Actions-Pipeline. Deployment der statischen Showcase-Seite auf GitHub Pages.","assignment_group":"a715cd759f2002002920bde8132e7018","implementation_plan":"Die genehmigte Aenderung wird automatisch durch die CI/CD-Pipeline innerhalb des geplanten Zeitfensters auf GitHub Pages deployed.","backout_plan":"Bei Fehlern wird der vorherige Stand der Seite per Revert/Redeploy wiederhergestellt.","test_plan":"Pruefung, ob die Seite nach dem Deploy korrekt erreichbar ist und die Aenderung sichtbar ist."}}'          interval: '60'                       # alle 60s den Change-Status abfragen
+          change-request: '{"setCloseCode":"true","autoCloseChange":true,"attributes":{"short_description":"Showcase Deployment der Demo-Webseite","description":"Automatischer Change aus der GitHub-Actions-Pipeline. Deployment der statischen Showcase-Seite auf GitHub Pages.","assignment_group":"a715cd759f2002002920bde8132e7018","implementation_plan":"Die genehmigte Aenderung wird automatisch durch die CI/CD-Pipeline innerhalb des geplanten Zeitfensters auf GitHub Pages deployed.","backout_plan":"Bei Fehlern wird der vorherige Stand der Seite per Revert/Redeploy wiederhergestellt.","test_plan":"Pruefung, ob die Seite nach dem Deploy korrekt erreichbar ist und die Aenderung sichtbar ist."}}'
+          interval: '60'                       # alle 60s den Change-Status abfragen
           timeout: '3600'                      # max. 1h auf Abschluss warten
           changeCreationTimeOut: '3600'
           abortOnChangeCreationFailure: true   # Pipeline stoppt, wenn kein Change entsteht
